@@ -1,0 +1,8 @@
+#ifndef __MemFree_h
+#define __MemFree_h
+
+#include "Head.h"
+
+extern void memReleaser();
+
+#endif

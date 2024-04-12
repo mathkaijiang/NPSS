@@ -1,0 +1,34 @@
+#include "Data.h"
+#include "MemFree.h"
+
+void memReleaser()
+{
+	fftw_free(rhoCplx);
+	fftw_free(rhoReal);
+	fftw_free(fftw_Ctmp);
+	fftw_free(fftw_Rtmp);
+	fftw_free(gradient);
+	fftw_free(cplxTmp);
+	fftw_free(quadTerm);
+	fftw_free(cubTerm);
+	fftw_free(quarTerm);
+	free(Gsquare);
+	for(int i = 0; i < DimCpt; i++) 
+	{
+		free(dirBox[i]); 
+		free(rcpBox[i]);
+	}
+	free(dirBox);
+	free(rcpBox);
+	for(int i = 0; i < DimPhy; i++) free(ProjMatrix[i]);
+	free(ProjMatrix);
+	for(int i = 0; i < cplxDofs; i++)
+	{
+		free(indKspace[i]);
+		free(projPlane[i]);
+	}
+	free(indKspace);
+	free(projPlane);
+	fftw_destroy_plan(Planc2cFord);
+	fftw_destroy_plan(Planc2cBack);
+}

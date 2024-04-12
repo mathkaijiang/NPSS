@@ -1,0 +1,84 @@
+#include "Head.h"
+#include "Data.h"
+#include "Initialization.h"
+#include "FftwToolkit.h"
+#include "BasicOperators.h"
+#include "Mytimer.h"
+
+void getIndex(int **kspace, int dim) 
+{
+	int *k = (int *)malloc(sizeof(int)*dim);
+	for(int i = 0; i < dim; i++) k[i] = 0;	
+
+	for(int i = 0; i < cplxDofs; i++)
+	{
+		for(int j = 0; j < dim; j++)
+		{
+			if(k[j]>NCpt[j]/2) kspace[i][j] = k[j]-NCpt[j];
+			else kspace[i][j] = k[j];
+		}
+		k[dim-1] ++;
+		for(int jj = dim-1; jj > 0; jj--)
+		{
+			if(k[jj]>NCpt[jj]-1)
+			{
+				k[jj] = 0;
+				k[jj-1] ++;
+			}
+		}
+	}
+	free(k);
+}
+
+int getIndex1D(int *k, int *Ndof, int dim)
+{
+	int index;
+	int *ktmp = (int *)malloc(sizeof(int)*dim);
+	for(int i = 0; i < dim; i++)
+	{
+		if(k[i]<0) ktmp[i] = k[i]+Ndof[i];
+		else ktmp[i] = k[i];
+	}
+	
+//    ktmp[dim-1] + ktmp[dim-2]*Ndof[dim-1] + ... + ktmp[0]*Ndof[1]*...*Ndof[dim-1]
+	index = ktmp[dim-1];
+	for(int i = dim-2; i >= 0; i--)
+	{
+		int tmp = 1;
+		for(int j = i+1; j < dim; j++)
+		{
+			tmp *= Ndof[j]; 
+		}
+		index += tmp*ktmp[i];
+	}
+
+	free(ktmp);
+	return index;
+}
+
+void convolution(fftw_complex *src, fftw_complex *orig, int order)
+{
+	memcpy(fftw_Ctmp, src, sizeof(fftw_complex)*cplxDofs);
+	fftw_execute(Planc2cBack);   // cplx to real
+	for(int i = 0; i < cplxDofs; i++)
+	{
+		fftw_Rtmp[i][0] = std::pow(fftw_Rtmp[i][0], order);
+		fftw_Rtmp[i][1] = std::pow(fftw_Rtmp[i][1], order);
+	}
+	fftw_execute(Planc2cFord);  // real to cplx
+	FuncsLinear1Cplx(fftw_Ctmp, cplxDofs, 1.0/cplxDofs, fftw_Ctmp);
+	memcpy(orig, fftw_Ctmp, sizeof(fftw_complex)*cplxDofs);
+}
+
+void pad(fftw_complex *in, fftw_complex *out, int *Ndof, int *ExpandNdof, int dim)
+{
+	int k, Expandk;
+	for(int i = 0; i < cplxDofs; i++)
+	{
+		k = getIndex1D(indKspace[i], Ndof, dim);
+		Expandk = getIndex1D(indKspace[i], ExpandNdof, dim);
+//        memcpy(out[Expandk], in[k], sizeof(fftw_complex)*1);
+		out[Expandk][0] = in[k][0];
+		out[Expandk][1] = in[k][1];
+	}
+}

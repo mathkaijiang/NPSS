@@ -1,0 +1,11 @@
+#ifndef __LPsrc_h
+#define __LPsrc_h
+
+#include "Head.h"
+
+extern void LPsystParameter();
+extern double gradUpdate_LP(double tol);
+extern double hamiltonUpdate_LP(double *timeSum);
+extern void initialize_LP();
+
+#endif

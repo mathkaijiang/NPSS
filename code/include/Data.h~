@@ -1,0 +1,37 @@
+#ifndef __Data_h
+#define __Data_h
+
+#include "Head.h"
+
+typedef struct myVec
+{
+	double* Data;
+	int* Index;
+}mySortVec;
+
+typedef struct myWave
+{
+	double* Wave;
+	double* Data;
+}mySortWave;
+
+extern char *model_initial_value;
+
+extern double PARA_Q0, PARA_Q1, PARA_XI, PARA_lambda, PARA_tau, PARA_gamma;
+extern int DIM, DimPhy, DimCpt;
+extern int Nfold;
+extern double **dirBox, **rcpBox;
+extern int *NCpt;
+extern int cplxDofs, realDofs;
+extern double **ProjMatrix;
+extern double *Gsquare;
+extern int **indKspace;
+extern double **projPlane;
+extern fftw_complex *rhoReal, *rhoCplx;
+extern fftw_complex *gradient;
+extern fftw_complex *fftw_Ctmp, *fftw_Rtmp, *cplxTmp;
+extern fftw_complex *quadTerm, *cubTerm, *quarTerm; 
+extern char *model_initial_value;
+extern fftw_plan Planc2cFord, Planc2cBack;
+
+#endif

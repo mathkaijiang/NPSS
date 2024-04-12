@@ -1,0 +1,30 @@
+#include "Data.h"
+#include "Head.h"
+#include "Initialization.h"
+#include "FftwToolkit.h"
+#include "BasicOperators.h"
+#include "DisplayResults.h"
+#include "LPsrc.h"
+#include "Mytimer.h"
+#include "MemFree.h"
+
+int main()
+{
+	printf("\n\n ====================================   START PROGRAM  ======================================\n");
+	mytimer_t timer;
+	timer.reset();
+	timer.start();
+
+	double hamilton = 0.0;
+	double TOL = 1.0e-6;
+	FILE *fenergy;
+
+	initialize();
+	hamilton = gradUpdate_LP(TOL);
+	memReleaser();
+	timer.pause();
+
+	printf("\n\n\n\t\t time cost of program : %f seconds, hamilton = %.15e\n", timer.get_current_time(), hamilton);
+	printf("\n\n ======================================   END PROGRAM  ======================================\n\n");
+	return 1;
+}

@@ -1,0 +1,166 @@
+#include "Data.h"
+#include "Initialization.h"
+#include "FftwToolkit.h"
+#include "BasicOperators.h"
+#include "DisplayResults.h"
+#include "Mytimer.h"
+
+void memAllocation()
+{
+	realDofs = cplxDofs = 1;
+	for(int i = 0; i < DimCpt; i++)
+	{
+		realDofs *= NCpt[i];
+		cplxDofs *= NCpt[i];
+	}
+	printf("\t\t\t\t\t === Discrete Modes === \n");
+	for(int i = 0; i < DimCpt; i++)
+	printf("\t NCpt[%d] = %d", i, NCpt[i]);
+	printf("\n");
+	printf("\t cplxDofs = %d,\t realDofs = %d\n\n", cplxDofs, realDofs);
+
+	//-------------------------------------------------------------------
+	printf("\t\t\t\t\t === Direction Box === \n");
+	MatPrint(dirBox, DimCpt, DimCpt);
+	printf("\n");
+	printf("\t\t\t\t\t === reciprocal Box === \n");
+	MatPrint(rcpBox, DimCpt, DimCpt);
+	printf("\n");
+
+	//-------------------------------------------------------------------
+	ProjMatrix = (double **)malloc(sizeof(double*)*DimPhy);
+	for(int i = 0; i < DimPhy; i++)
+		ProjMatrix[i] = (double *)malloc(sizeof(double)*DimCpt);
+	for(int i = 0; i < DimPhy; i ++)
+		for(int j = 0; j < DimCpt; j ++)
+			ProjMatrix[i][j] = 0.0;
+	for(int i = 0; i < DimPhy; i ++) ProjMatrix[i][i] = 1.0;
+	printf("\t\t\t\t\t === Projective Matrix === \n");
+	MatPrint(ProjMatrix, DimPhy, DimCpt);
+	printf("\n");
+
+	indKspace = (int **)malloc(sizeof(int*)*cplxDofs);
+	projPlane = (double **)malloc(sizeof(double*)*cplxDofs);
+	for(int i = 0; i < cplxDofs; i++)
+	{
+		indKspace[i] = (int *)malloc(sizeof(int)*DimCpt);
+		projPlane[i] = (double *)malloc(sizeof(double)*DimPhy);
+	}
+
+	rhoCplx   = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	rhoReal   = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	fftw_Ctmp = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	fftw_Rtmp = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	gradient  = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	cplxTmp   = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	quadTerm  = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	cubTerm   = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	quarTerm  = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	Gsquare   = (double *)malloc(sizeof(double) *cplxDofs);
+
+	for(int i = 0; i < cplxDofs; i++)
+	{
+		setCplxZero(rhoCplx[i]);
+		setCplxZero(rhoReal[i]);
+		setCplxZero(gradient[i]);
+		setCplxZero(cplxTmp[i]);
+		Gsquare[i] = 0.0;
+		for(int j = 0; j < DimPhy; j++) projPlane[i][j] = 0.0;
+		for(int k = 0; k < DimCpt; k++) indKspace[i][k] = 0;
+	}
+
+	Planc2cFord = fftw_plan_dft(DimCpt, NCpt, fftw_Rtmp, fftw_Ctmp, FFTW_FORWARD,  FFTW_MEASURE);  // real to cplx
+	Planc2cBack = fftw_plan_dft(DimCpt, NCpt, fftw_Ctmp, fftw_Rtmp, FFTW_BACKWARD, FFTW_MEASURE);  // cplx to real 
+}
+
+void getProjPlane()
+{
+	for(int i = 0; i < cplxDofs; i++)
+	{
+		for(int j = 0; j < DimCpt; j++)
+		{
+			double mnt = 0.0;
+			for(int ii = 0; ii < DimCpt; ii++)
+				mnt += indKspace[i][ii]*rcpBox[ii][j]; 
+			for(int jj = 0; jj < DimPhy; jj++)
+				projPlane[i][jj] += ProjMatrix[jj][j]*mnt;
+		}
+	}
+}
+
+void getGsquare()
+{
+	double *tmp = (double *)malloc(sizeof(double)*DimPhy);
+	for(int i = 0; i < DimPhy; i++)
+		tmp[i] = 0.0;
+
+	for(int i = 0; i < cplxDofs; i++)
+	{
+		for(int k = 0; k < DimPhy; k++) tmp[k] = 0.0;
+		for(int ii = 0; ii < DimCpt; ii++)
+		{
+			double mnt = 0.0;
+			for(int jj = 0; jj < DimCpt; jj++)
+				mnt += indKspace[i][jj]*rcpBox[jj][ii]; 
+			for(int kk = 0; kk < DimPhy; kk++) 
+				tmp[kk] += ProjMatrix[kk][ii]*mnt;
+		}
+		Gsquare[i] = 0;
+		for(int kk = 0; kk < DimPhy; kk++) Gsquare[i] += pow(tmp[kk], 2);
+	}
+	free(tmp);
+}
+
+void initDenFourier()
+{
+	int initDof;
+	char initname[100];
+	sprintf(initname, "./initData/%s",model_initial_value);
+	FILE *p = fopen(initname, "r");
+	fscanf(p, "%d", &initDof);  
+
+	int **fIndex = (int **)malloc(sizeof(int*)*initDof);
+	int *kIndex = (int *)malloc(sizeof(int)*DimCpt);
+	for(int i = 0; i < initDof; i++) 
+		fIndex[i] = (int *)malloc(sizeof(int)*DimCpt);
+
+	double **coeffFouier = (double **)malloc(sizeof(double*)*initDof);
+	for(int i = 0; i < initDof; i ++) 
+		coeffFouier[i] = (double *)malloc(sizeof(double)*2);
+
+	for(int i = 0; i < initDof; i++)
+	{
+		for(int j = 0; j < DimCpt; j++)
+		{
+			fscanf(p, "%d", &(fIndex[i][j]));
+		}
+		for(int jj = 0; jj < 2; jj++)
+		{
+			fscanf(p, "%lf", &(coeffFouier[i][jj]));
+		}
+	}
+
+	int kk;
+	for(int i = 0; i < initDof; i++)
+	{
+		kk = getIndex1D(fIndex[i], NCpt, DimCpt);
+		rhoCplx[kk][0] = coeffFouier[i][0];
+		rhoCplx[kk][1] = coeffFouier[i][1];
+		if(fIndex[i][DimCpt-1]>0)
+		{
+			for(int j = 0; j < DimCpt; j++) kIndex[j] = -1*fIndex[i][j];
+			kk = getIndex1D(kIndex, NCpt, DimCpt);
+			rhoCplx[kk][0] = coeffFouier[i][0];
+			rhoCplx[kk][1] = coeffFouier[i][1];
+		}
+	}
+	setCplxZero(rhoCplx[0]);
+
+	fclose(p);
+	for(int i = 0; i < initDof; i++)
+	free(coeffFouier[i]);
+	free(coeffFouier);
+	for(int i = 0; i < initDof; i++) free(fIndex[i]);
+	free(fIndex);
+	free(kIndex);
+}

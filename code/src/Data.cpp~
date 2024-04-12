@@ -1,0 +1,20 @@
+#include "Data.h"
+
+char CHOOSE[20];
+double PARA_Q0, PARA_Q1, PARA_XI, PARA_lambda, PARA_tau, PARA_gamma;
+int DIM, DimPhy, DimCpt;
+int Nfold;
+double **dirBox, **rcpBox;
+int *NCpt;
+int cplxDofs, realDofs;
+double **ProjMatrix;
+double *Gsquare;
+int **indKspace;
+double **projPlane;
+fftw_complex *rhoReal, *rhoCplx;
+fftw_complex *gradient;
+fftw_complex *fftw_Ctmp, *fftw_Rtmp, *cplxTmp;
+fftw_complex *quadTerm, *cubTerm, *quarTerm; 
+char *model_initial_value;
+fftw_plan Planc2cFord, Planc2cBack;
+

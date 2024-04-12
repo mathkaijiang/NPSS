@@ -1,0 +1,11 @@
+#ifndef __FftwToolkit_h
+#define __FftwToolkit_h
+
+#include "Head.h"
+
+extern void getIndex(int **kspace, int dim);
+extern void convolution(fftw_complex *src, fftw_complex *orig, int order);
+extern void FftwC2C(fftw_complex *rslt, fftw_complex *src, char *direction);
+
+#endif
+

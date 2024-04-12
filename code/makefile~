@@ -1,0 +1,19 @@
+CXX=g++
+CFLAGS=-c -O2 -W -g
+INCLUDE=-I./include
+LIBPATH=-L./lib
+OBJECTS=Data BasicOperators FftwToolkit DisplayResults\
+		DualBox Initialization LBsrc MemFree LPsrc
+
+all:lp.model
+# 建立动态链接
+./lib/lib%.so:./src/%.cpp
+	$(CXX) $(CFLAGS) -o $@ $< $(INCLUDE) -lfftw3 -lm
+
+lp.model:$(addsuffix .so, $(addprefix ./lib/lib, $(OBJECTS))) LPmodel.cpp
+		$(CXX) -g $(INCLUDE) LPmodel.cpp -o $@ $(LIBPATH) $(addprefix -l, $(OBJECTS)) -lfftw3 -lm 
+
+clean: 
+	-rm ./lib/*.so
+	-rm lp.model
+	-rm ./result/*.dat

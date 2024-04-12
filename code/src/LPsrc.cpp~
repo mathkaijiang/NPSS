@@ -1,0 +1,244 @@
+#include "Data.h"
+#include "Initialization.h"
+#include "FftwToolkit.h"
+#include "BasicOperators.h"
+#include "DisplayResults.h"
+#include "DualBox.h"
+#include "LPsrc.h"
+#include "Mytimer.h"
+
+void LPsystParameter()
+{
+// system parameters
+	DIM = 4;
+	DimPhy = 2;
+	DimCpt = 4;
+
+	PARA_Q0 = 1.0;
+	PARA_Q1 = 2.0*cos(PI/12.0);
+	PARA_XI = 50;                 // penalty factor 
+	PARA_tau    = 0.015;          // 二次项系数
+	PARA_gamma  = 1.0;            // 三次项系数
+	PARA_lambda = 1.0;            // 四次项系数
+
+	Nfold = 12;  				  // 考虑结构的对称性
+
+	printf("\t ***** System parameters: DIM = %d, Xi = %.3f, Tau = %.3f, Gamma = %.3f ***** \n", DimCpt, PARA_XI, PARA_tau, PARA_gamma);
+
+	model_initial_value="12fold";
+
+	NCpt = (int *)malloc(sizeof(int)*DimCpt);
+	for(int i = 0; i < DimCpt; i++) NCpt[i] = 24;	
+
+	//-------------------------------------------------------------------
+	dirBox = (double **)malloc(sizeof(double*)*DimCpt);
+	rcpBox = (double **)malloc(sizeof(double*)*DimCpt);
+	for(int i = 0; i < DimCpt; i++)
+	{
+		dirBox[i] = (double *)malloc(sizeof(double)*DimCpt);
+		rcpBox[i] = (double *)malloc(sizeof(double)*DimCpt);
+	}
+	for(int i = 0; i < DimCpt; i++)
+	{
+		for(int j = 0; j < DimCpt; j++)
+		{
+			dirBox[i][j] = 0.0;	rcpBox[i][j] = 0.0;
+		}
+	}
+	double lenRecipBox = 1.0;
+	for(int i = 0; i < DimCpt; i++)
+		rcpBox[i][i] = lenRecipBox;
+	getRecipLattice(rcpBox, dirBox, DimCpt);
+
+	//-------------------------------------------------------------------
+	ProjMatrix = (double **)malloc(sizeof(double*)*DimPhy);
+	for(int i = 0; i < DimPhy; i++)
+		ProjMatrix[i] = (double *)malloc(sizeof(double)*DimCpt);
+	for(int i = 0; i < DimPhy; i ++)
+		for(int j = 0; j < DimCpt; j ++)
+			ProjMatrix[i][j] = 0.0;
+	
+//    for(int i = 0; i < DimPhy; i ++) ProjMatrix[i][i] = 1.0;
+	for(int j = 0; j < DimCpt; j++)
+	{
+		ProjMatrix[0][j] = cos(2*PI*(j+1)/Nfold);
+		ProjMatrix[1][j] = sin(2*PI*(j+1)/Nfold);
+	}
+	printf("\t\t\t\t\t === Projective Matrix === \n");
+	MatPrint(ProjMatrix, DimPhy, DimCpt);
+	printf("\n");
+}
+
+void initialize_LP()
+{
+	printf("\n\n \t\t\t\t ******* Initization ******* \n\n");
+	mytimer_t timer;
+// system parameters
+	timer.reset();
+	timer.start();
+	LPsystParameter();
+	timer.pause();
+	printf("\t\t time cost of initialize parameters : %f seconds\n", timer.get_current_time());
+
+// allocate memory 
+	timer.reset();
+	timer.start();
+	memAllocation();
+	timer.pause();
+	printf("\t\t time cost of memory allocation : %f seconds\n", timer.get_current_time());
+
+// 建立一维指标和物理空间指标的对应关系
+	timer.reset();
+	timer.start();
+	getIndex(indKspace, DimCpt);
+	timer.pause();
+	printf("\t\t time cost of getIndex : %f seconds\n", timer.get_current_time());
+
+// 平面波
+	getProjPlane();
+
+//  |G|^2
+	getGsquare();
+
+//  密度rho的初值
+	timer.reset();
+	timer.start();
+	initDenFourier();
+	timer.pause();
+	printf("\t\t time cost of initialize field : %f seconds\n", timer.get_current_time());
+	
+////  输出初始密度
+//    dispCoeffFourier(rhoCplx, 0);
+//    dispDensity(rhoCplx, 0);
+}
+
+double gradUpdate_LP(double tol)
+{
+	double stepSize = 0.1;
+	int iterator = 0;
+	double res = 1.0;
+	double tmp1, tmp2, temp;
+	FILE *ferror, *fenergy;
+	char errorName[100];
+	char energyName[100];
+	sprintf(errorName,"./result/error_%s_%d.dat",model_initial_value,realDofs);
+	sprintf(energyName,"./result/energy_%s_%d.dat",model_initial_value,realDofs);
+	ferror = fopen(errorName,"w");
+	fenergy = fopen(energyName,"w");
+	clock_t start, finish;
+	double duration, hamilton, oldHamilton, diffham;
+	oldHamilton = 100;
+	double timeCost = 0.0;
+
+	printf(" <========== Fixed box, generate equilibrium state of order parameters ==========> \n\n");
+	printf("Step %d: ", iterator);
+
+	do
+	{
+		hamilton = hamiltonUpdate_LP(&timeCost);
+
+		diffham = fabs(hamilton-oldHamilton);
+		oldHamilton = hamilton;
+		printf("\t hamilton = %.10e\n", hamilton);
+		fprintf(fenergy, "%.10e\n", hamilton);
+		iterator ++;
+
+		for(int i = 0; i < cplxDofs; i++) 
+		{
+			gradient[i][0] = PARA_gamma*quadTerm[i][0];
+			gradient[i][1] = PARA_gamma*quadTerm[i][1];
+		}
+
+		for(int i = 0; i < cplxDofs; i++)
+		{
+			gradient[i][0] -=  PARA_lambda*cubTerm[i][0];
+			gradient[i][1] -=  PARA_lambda*cubTerm[i][1];
+		}
+
+		for(int i = 0; i < cplxDofs; i++)
+		{
+//            tmp = 1.0-Gsquare[i];
+//            temp=tmp*tmp;	
+
+			tmp1 = std::pow(PARA_Q0, 2)-Gsquare[i];
+			tmp1 = std::pow(tmp1, 2);
+			tmp2 = std::pow(PARA_Q1, 2)-Gsquare[i];
+			tmp2 = std::pow(tmp2, 2);
+			temp = tmp1*tmp2;
+
+			rhoCplx[i][0] = (1.0+stepSize*PARA_tau)*rhoCplx[i][0]+stepSize*gradient[i][0];
+			rhoCplx[i][1] = (1.0+stepSize*PARA_tau)*rhoCplx[i][1]+stepSize*gradient[i][1];
+			rhoCplx[i][0] = rhoCplx[i][0] / (1.0+stepSize*temp*PARA_XI);
+			rhoCplx[i][1] = rhoCplx[i][1] / (1.0+stepSize*temp*PARA_XI);
+
+			gradient[i][0] += (PARA_tau - PARA_XI*temp)*rhoCplx[i][0];
+			gradient[i][1] += (PARA_tau - PARA_XI*temp)*rhoCplx[i][1];
+		}
+		rhoCplx[0][0] = 0.0;
+		rhoCplx[0][1] = 0.0;
+		gradient[0][0] = 0.0;
+		gradient[0][1] = 0.0;
+		res = normCplxInfty(gradient, cplxDofs);
+
+		printf("\nStep %d :   res = %.15e\n", iterator, res);
+		fprintf(ferror, "%.15e\n", res);
+		iterator ++;
+	}while(res > tol);  
+	//}while(diffham > tol || res > 1.0e-5);
+	//        }while(diffham > tol);
+	//    }while(res > tol && iterator < 10000);
+//    }while(iterator <= 1493);
+	
+	hamilton = hamiltonUpdate_LP(&timeCost);
+	printf("\n\n\t\t ***** time cost of convolution : %f seconds *****\n", timeCost);
+	fprintf(fenergy, "%.15e\n", hamilton);
+
+	dispPlaneWave(rhoCplx);
+	dispCoeffFourier(rhoCplx, iterator-1);
+//    dispDensity(rhoCplx, iterator-1);
+
+	fclose(ferror);
+	fclose(fenergy);
+	return hamilton;
+}
+
+double hamiltonUpdate_LP(double *timeSum)
+{
+	double rslt = 0.0;
+	double laplaceVal = 0.0;
+	double nonlinearVal = 0.0;
+
+	fftw_complex *DiffTerm, *DiffTermTmp;
+	DiffTerm = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+	DiffTermTmp = (fftw_complex *)fftw_malloc(sizeof(fftw_complex)*cplxDofs);
+
+	double Difftmp1, Difftmp2;
+	for(int i = 0; i < cplxDofs; i++)
+	{
+		Difftmp1 = pow(PARA_Q0, 2)-Gsquare[i];  
+		Difftmp2 = pow(PARA_Q1, 2)-Gsquare[i];  
+		DiffTermTmp[i][0] = Difftmp1*Difftmp2*rhoCplx[i][0];
+		DiffTermTmp[i][1] = Difftmp1*Difftmp2*rhoCplx[i][1];
+	}
+
+	mytimer_t timer;
+	timer.reset();
+	timer.start();
+
+	convolution(DiffTermTmp, DiffTerm, 2);
+	convolution(rhoCplx, quadTerm, 2);
+	convolution(rhoCplx, cubTerm,  3);
+	convolution(rhoCplx, quarTerm, 4);
+
+	timer.pause();
+	*timeSum += timer.get_current_time();
+
+	laplaceVal = DiffTerm[0][0]*PARA_XI/2; 
+	nonlinearVal = -quadTerm[0][0]*PARA_tau/2-cubTerm[0][0]*PARA_gamma/3 + quarTerm[0][0]/4; 
+	rslt = laplaceVal + nonlinearVal;
+	printf(" \t Nonlinear term : %.15e,\tLaplace term : %.15e,", nonlinearVal, laplaceVal);
+
+	fftw_free(DiffTermTmp);
+	fftw_free(DiffTerm);
+	return rslt;
+}

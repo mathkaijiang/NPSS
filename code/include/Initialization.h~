@@ -1,0 +1,12 @@
+#ifndef __Initialization_h
+#define __Initialization_h
+
+#include "Head.h"
+
+extern void initialize();
+extern void memAllocation();
+extern void getProjPlane();
+extern void getGsquare();
+extern void initDenFourier();
+
+#endif
